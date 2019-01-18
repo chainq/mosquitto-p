@@ -8,19 +8,19 @@ Copyright (c) 2010-2018 Roger Light <roger@atchoo.org>
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
 and Eclipse Distribution License v1.0 which accompany this distribution.
- 
+
 The Eclipse Public License is available at
    http://www.eclipse.org/legal/epl-v10.html
 and the Eclipse Distribution License is available at
   http://www.eclipse.org/org/documents/edl-v10.php.
- 
+
 Contributors:
    Roger Light - initial implementation and documentation.
 *}
 
 {*
  * Free Pascal header conversion
- * Copyright (c) 2018 Karoly Balogh <charlie@amigaspirit.hu>
+ * Copyright (c) 2018-2019 Karoly Balogh <charlie@amigaspirit.hu>
  *}
 
 interface
@@ -47,8 +47,8 @@ const
 
 const
     LIBMOSQUITTO_MAJOR = 1;
-    LIBMOSQUITTO_MINOR = 4;
-    LIBMOSQUITTO_REVISION = 15;
+    LIBMOSQUITTO_MINOR = 5;
+    LIBMOSQUITTO_REVISION = 5;
 {* LIBMOSQUITTO_VERSION_NUMBER looks like 1002001 for e.g. version 1.2.1. *}
     LIBMOSQUITTO_VERSION_NUMBER = (LIBMOSQUITTO_MAJOR*1000000+LIBMOSQUITTO_MINOR*1000+LIBMOSQUITTO_REVISION);
 
@@ -85,10 +85,17 @@ const
     MOSQ_ERR_ERRNO = 14;
     MOSQ_ERR_EAI = 15;
     MOSQ_ERR_PROXY = 16;
+    MOSQ_ERR_PLUGIN_DEFER = 17;
+    MOSQ_ERR_MALFORMED_UTF8 = 18;
+    MOSQ_ERR_KEEPALIVE = 19;
+    MOSQ_ERR_LOOKUP = 20;
+
 
 {* Error values *}
 const
     MOSQ_OPT_PROTOCOL_VERSION = 1;
+    MOSQ_OPT_SSL_CTX = 2;
+    MOSQ_OPT_SSL_CTX_WITH_DEFAULTS = 3;
 
 
 {* MQTT specification restricts client ids to a maximum of 23 characters *}
@@ -230,7 +237,7 @@ function mosquitto_lib_cleanup: cint; cdecl; external libmosq_NAME;
  *}
 function mosquitto_new(const id: PChar; clean_session: cbool; obj: Pointer): Pmosquitto; cdecl; external libmosq_NAME;
 
-{* 
+{*
  * Function: mosquitto_destroy
  *
  * Use to free memory associated with a mosquitto client instance.
@@ -272,7 +279,7 @@ procedure mosquitto_destroy(mosq: Pmosquitto); cdecl; external libmosq_NAME;
  *}
 function mosquitto_reinitialise(mosq: Pmosquitto; const id: Pchar; clean_session: cbool; obj: Pointer): cint; cdecl; external libmosq_NAME;
 
-{* 
+{*
  * Function: mosquitto_will_set
  *
  * Configure will information for a mosquitto instance. By default, clients do
@@ -291,13 +298,14 @@ function mosquitto_reinitialise(mosq: Pmosquitto; const id: Pchar; clean_session
  *
  * Returns:
  * 	MOSQ_ERR_SUCCESS -      on success.
- * 	MOSQ_ERR_INVAL -        if the input parameters were invalid.
- * 	MOSQ_ERR_NOMEM -        if an out of memory condition occurred.
- * 	MOSQ_ERR_PAYLOAD_SIZE - if payloadlen is too large.
+ * 	MOSQ_ERR_INVAL -          if the input parameters were invalid.
+ * 	MOSQ_ERR_NOMEM -          if an out of memory condition occurred.
+ * 	MOSQ_ERR_PAYLOAD_SIZE -   if payloadlen is too large.
+ * 	MOSQ_ERR_MALFORMED_UTF8 - if the topic is not valid UTF-8.
  *}
 function mosquitto_will_set(mosq: Pmosquitto; const topic: pchar; payloadlen: cint; const payload: pointer; qos: cint; retain: cbool): cint; cdecl; external libmosq_NAME;
 
-{* 
+{*
  * Function: mosquitto_will_clear
  *
  * Remove a previously configured will. This must be called before calling
@@ -506,7 +514,7 @@ function mosquitto_connect_srv(mosq: Pmosquitto; const host: pchar; keepalive: c
  * connection has been lost. It uses the values that were provided in the
  * <mosquitto_connect> call. It must not be called before
  * <mosquitto_connect>.
- * 
+ *
  * Parameters:
  * 	mosq - a valid mosquitto instance.
  *
@@ -537,7 +545,7 @@ function mosquitto_reconnect(mosq: Pmosquitto): cint; cdecl; external libmosq_NA
  * connection has been lost. It uses the values that were provided in the
  * <mosquitto_connect> or <mosquitto_connect_async> calls. It must not be
  * called before <mosquitto_connect>.
- * 
+ *
  * Parameters:
  * 	mosq - a valid mosquitto instance.
  *
@@ -574,11 +582,11 @@ function mosquitto_reconnect_async(mosq: Pmosquitto): cint; cdecl; external libm
  *}
 function mosquitto_disconnect(mosq: Pmosquitto): cint; cdecl; external libmosq_NAME;
 
-{* 
+{*
  * Function: mosquitto_publish
  *
  * Publish a message on a given topic.
- * 
+ *
  * Parameters:
  * 	mosq -       a valid mosquitto instance.
  * 	mid -        pointer to an int. If not NULL, the function will set this
@@ -598,15 +606,15 @@ function mosquitto_disconnect(mosq: Pmosquitto): cint; cdecl; external libmosq_N
  * 	retain -     set to true to make the message retained.
  *
  * Returns:
- * 	MOSQ_ERR_SUCCESS -      on success.
- * 	MOSQ_ERR_INVAL -        if the input parameters were invalid.
- * 	MOSQ_ERR_NOMEM -        if an out of memory condition occurred.
- * 	MOSQ_ERR_NO_CONN -      if the client isn't connected to a broker.
- *	MOSQ_ERR_PROTOCOL -     if there is a protocol error communicating with the
- *                          broker.
- * 	MOSQ_ERR_PAYLOAD_SIZE - if payloadlen is too large.
- *
- * See Also: 
+ *	MOSQ_ERR_SUCCESS -        on success.
+ * 	MOSQ_ERR_INVAL -          if the input parameters were invalid.
+ * 	MOSQ_ERR_NOMEM -          if an out of memory condition occurred.
+ * 	MOSQ_ERR_NO_CONN -        if the client isn't connected to a broker.
+ * 	MOSQ_ERR_PROTOCOL -       if there is a protocol error communicating with the
+ *                            broker.
+ * 	MOSQ_ERR_PAYLOAD_SIZE -   if payloadlen is too large.
+ * 	MOSQ_ERR_MALFORMED_UTF8 - if the topic is not valid UTF-8
+ * See Also:
  *	<mosquitto_max_inflight_messages_set>
  *}
 function mosquitto_publish(mosq: Pmosquitto; mid: pcint; const topic: pchar; payloadlen: cint; const payload: pointer; qos: cint; retain: cbool): cint; cdecl; external libmosq_NAME;
@@ -626,10 +634,11 @@ function mosquitto_publish(mosq: Pmosquitto; mid: pcint; const topic: pchar; pay
  *	qos -  the requested Quality of Service for this subscription.
  *
  * Returns:
- *	MOSQ_ERR_SUCCESS - on success.
- * 	MOSQ_ERR_INVAL -   if the input parameters were invalid.
- * 	MOSQ_ERR_NOMEM -   if an out of memory condition occurred.
- * 	MOSQ_ERR_NO_CONN - if the client isn't connected to a broker.
+ *	MOSQ_ERR_SUCCESS -        on success.
+ * 	MOSQ_ERR_INVAL -          if the input parameters were invalid.
+ * 	MOSQ_ERR_NOMEM -          if an out of memory condition occurred.
+ * 	MOSQ_ERR_NO_CONN -        if the client isn't connected to a broker.
+ * 	MOSQ_ERR_MALFORMED_UTF8 - if the topic is not valid UTF-8
  *}
 function mosquitto_subscribe(mosq: Pmosquitto; mid: pcint; const sub: pchar; qos: cint): cint; cdecl; external libmosq_NAME;
 
@@ -647,10 +656,11 @@ function mosquitto_subscribe(mosq: Pmosquitto; mid: pcint; const sub: pchar; qos
  *	sub -  the unsubscription pattern.
  *
  * Returns:
- *	MOSQ_ERR_SUCCESS - on success.
- * 	MOSQ_ERR_INVAL -   if the input parameters were invalid.
- * 	MOSQ_ERR_NOMEM -   if an out of memory condition occurred.
- * 	MOSQ_ERR_NO_CONN - if the client isn't connected to a broker.
+ *	MOSQ_ERR_SUCCESS -        on success.
+ * 	MOSQ_ERR_INVAL -          if the input parameters were invalid.
+ * 	MOSQ_ERR_NOMEM -          if an out of memory condition occurred.
+ * 	MOSQ_ERR_NO_CONN -        if the client isn't connected to a broker.
+ * 	MOSQ_ERR_MALFORMED_UTF8 - if the topic is not valid UTF-8
  *}
 function mosquitto_unsubscribe(mosq: Pmosquitto; mid: pcint; const sub: pchar): cint; cdecl; external libmosq_NAME;
 
@@ -676,16 +686,29 @@ function mosquitto_message_copy(dst: Pmosquitto_message; const src: Pmosquitto_m
 
 {*
  * Function: mosquitto_message_free
- * 
+ *
  * Completely free a mosquitto_message struct.
  *
  * Parameters:
  *	message - pointer to a mosquitto_message pointer to free.
  *
  * See Also:
- * 	<mosquitto_message_copy>
+ * 	<mosquitto_message_copy>, <mosquitto_message_free_contents>
  *}
 procedure mosquitto_message_free(message: PPmosquitto_message); cdecl; external libmosq_NAME;
+
+{*
+ * Function: mosquitto_message_free_contents
+ *
+ * Free a mosquitto_message struct contents, leaving the struct unaffected.
+ *
+ * Parameters:
+ *	message - pointer to a mosquitto_message struct to free its contents.
+ *
+ * See Also:
+ * 	<mosquitto_message_copy>, <mosquitto_message_free>
+ *}
+procedure mosquitto_message_free_contents(mosquitto_message: Pmosquitto_message); cdecl; external libmosq_NAME;
 
 {*
  * Function: mosquitto_loop
@@ -951,10 +974,29 @@ function mosquitto_threaded_set(mosq: Pmosquitto; threaded: cbool): cint; cdecl;
  *	value -  the option specific value.
  *
  * Options:
- *	MOSQ_OPT_PROTOCOL_VERSION - value must be an int, set to either
- *	                            MQTT_PROTOCOL_V31 or MQTT_PROTOCOL_V311. Must
- *	                            be set before the client connects. Defaults to
- *	                            MQTT_PROTOCOL_V31.
+ *	MOSQ_OPT_PROTOCOL_VERSION
+ *	          Value must be an int, set to either MQTT_PROTOCOL_V31 or
+ *	          MQTT_PROTOCOL_V311. Must be set before the client connects.
+ *	          Defaults to MQTT_PROTOCOL_V31.
+ *
+ *	MOSQ_OPT_SSL_CTX
+ *	          Pass an openssl SSL_CTX to be used when creating TLS connections
+ *	          rather than libmosquitto creating its own.  This must be called
+ *	          before connecting to have any effect. If you use this option, the
+ *	          onus is on you to ensure that you are using secure settings.
+ *	          Setting to NULL means that libmosquitto will use its own SSL_CTX
+ *	          if TLS is to be used.
+ *	          This option is only available for openssl 1.1.0 and higher.
+ *
+ *	MOSQ_OPT_SSL_CTX_WITH_DEFAULTS
+ *	          Value must be an int set to 1 or 0. If set to 1, then the user
+ *	          specified SSL_CTX passed in using MOSQ_OPT_SSL_CTX will have the
+ *	          default options applied to it. This means that you only need to
+ *	          change the values that are relevant to you. If you use this
+ *	          option then you must configure the TLS options as normal, i.e.
+ *	          you should use <mosquitto_tls_set> to configure the cafile/capath
+ *	          as a minimum.
+ *	          This option is only available for openssl 1.1.0 and higher.
  *}
 function mosquitto_opts_set(mosq: Pmosquitto; option: cint; value: pointer): cint; cdecl; external libmosq_NAME;
 
@@ -995,7 +1037,8 @@ function mosquitto_opts_set(mosq: Pmosquitto; option: cint; value: pointer): cin
  *                Your callback must write the password into "buf", which is
  *                "size" bytes long. The return value must be the length of the
  *                password. "userdata" will be set to the calling mosquitto
- *                instance.
+ *                instance. The mosquitto userdata member variable can be
+ *                retrieved using <mosquitto_userdata>.
  *
  * Returns:
  *	MOSQ_ERR_SUCCESS - on success.
@@ -1003,7 +1046,8 @@ function mosquitto_opts_set(mosq: Pmosquitto; option: cint; value: pointer): cin
  * 	MOSQ_ERR_NOMEM -   if an out of memory condition occurred.
  *
  * See Also:
- *	<mosquitto_tls_opts_set>, <mosquitto_tls_psk_set>, <mosquitto_tls_insecure_set>
+ *	<mosquitto_tls_opts_set>, <mosquitto_tls_psk_set>,
+ *	<mosquitto_tls_insecure_set>, <mosquitto_userdata>
  *}
 type
     Tpw_callback = function(buf: pchar; size: cint; rwflag: cint; userdata: pointer): cint; cdecl;
@@ -1101,7 +1145,7 @@ function mosquitto_tls_opts_set(mosq: Pmosquitto; cert_reqs: cint; const tls_ver
  *}
 function mosquitto_tls_psk_set(mosq: Pmosquitto; const psk: pchar; const identity: pchar; const ciphers: pchar): cint; cdecl; external libmosq_NAME;
 
-{* 
+{*
  * Function: mosquitto_connect_callback_set
  *
  * Set the connect callback. This is called when the broker sends a CONNACK
@@ -1127,13 +1171,42 @@ type
     Ton_connect_callback = procedure(mosq: Pmosquitto; obj: pointer; rc: cint); cdecl;
 
 procedure mosquitto_connect_callback_set(mosq: Pmosquitto; on_connect: Ton_connect_callback); cdecl; external libmosq_NAME;
- 
+
+
+{*
+ * Function: mosquitto_connect_with_flags_callback_set
+ *
+ * Set the connect callback. This is called when the broker sends a CONNACK
+ * message in response to a connection.
+ *
+ * Parameters:
+ *  mosq -       a valid mosquitto instance.
+ *  on_connect - a callback function in the following form:
+ *               void callback(struct mosquitto *mosq, void *obj, int rc)
+ *
+ * Callback Parameters:
+ *  mosq - the mosquitto instance making the callback.
+ *  obj - the user data provided in <mosquitto_new>
+ *  rc -  the return code of the connection response, one of:
+ *  flags - the connect flags.
+ *
+ * * 0 - success
+ * * 1 - connection refused (unacceptable protocol version)
+ * * 2 - connection refused (identifier rejected)
+ * * 3 - connection refused (broker unavailable)
+ * * 4-255 - reserved for future use
+ *}
+type
+    Ton_connect_with_flags_callback = procedure(mosq: Pmosquitto; obj: pointer; _unknown1: cint; _unknown2: cint); cdecl;
+
+procedure mosquitto_connect_with_flags_callback_set(mosq: Pmosquitto; on_connect: Ton_connect_with_flags_callback); cdecl; external libmosq_NAME;
+
 {*
  * Function: mosquitto_disconnect_callback_set
  *
  * Set the disconnect callback. This is called when the broker has received the
  * DISCONNECT command and has disconnected the client.
- * 
+ *
  * Parameters:
  *  mosq -          a valid mosquitto instance.
  *  on_disconnect - a callback function in the following form:
@@ -1156,7 +1229,7 @@ procedure mosquitto_disconnect_callback_set(mosq: Pmosquitto; on_disconnect: Ton
  *
  * Set the publish callback. This is called when a message initiated with
  * <mosquitto_publish> has been sent to the broker successfully.
- * 
+ *
  * Parameters:
  *  mosq -       a valid mosquitto instance.
  *  on_publish - a callback function in the following form:
@@ -1177,7 +1250,7 @@ procedure mosquitto_publish_callback_set(mosq: Pmosquitto; on_publish: Ton_publi
  *
  * Set the message callback. This is called when a message is received from the
  * broker.
- * 
+ *
  * Parameters:
  *  mosq -       a valid mosquitto instance.
  *  on_message - a callback function in the following form:
@@ -1203,7 +1276,7 @@ procedure mosquitto_message_callback_set(mosq: Pmosquitto; on_message: Ton_messa
  *
  * Set the subscribe callback. This is called when the broker responds to a
  * subscription request.
- * 
+ *
  * Parameters:
  *  mosq -         a valid mosquitto instance.
  *  on_subscribe - a callback function in the following form:
@@ -1227,7 +1300,7 @@ procedure mosquitto_subscribe_callback_set(mosq: Pmosquitto; on_subscribe: Ton_s
  *
  * Set the unsubscribe callback. This is called when the broker responds to a
  * unsubscription request.
- * 
+ *
  * Parameters:
  *  mosq -           a valid mosquitto instance.
  *  on_unsubscribe - a callback function in the following form:
@@ -1240,7 +1313,7 @@ procedure mosquitto_subscribe_callback_set(mosq: Pmosquitto; on_subscribe: Ton_s
  *}
 type
     Ton_unsubscribe_callback = procedure(mosq: Pmosquitto; obj: pointer; mid: cint); cdecl;
- 
+
 procedure mosquitto_unsubscribe_callback_set(mosq: Pmosquitto; on_unsubscribe: Ton_unsubscribe_callback); cdecl; external libmosq_NAME;
 
 {*
@@ -1334,13 +1407,7 @@ function mosquitto_max_inflight_messages_set(mosq: Pmosquitto; max_inflight_mess
 {*
  * Function: mosquitto_message_retry_set
  *
- * Set the number of seconds to wait before retrying messages. This applies to
- * publish messages with QoS>0. May be called at any time.
- * 
- * Parameters:
- *  mosq -          a valid mosquitto instance.
- *  message_retry - the number of seconds to wait for a response before
- *                  retrying. Defaults to 20.
+ * This function now has no effect.
  *}
 procedure mosquitto_message_retry_set(mosq: Pmosquitto; message_retry: cuint); cdecl; external libmosq_NAME;
 
@@ -1452,15 +1519,16 @@ function mosquitto_connack_string(connack_code: cint): pchar; cdecl; external li
  *	count -    an int pointer to store the number of items in the topics array.
  *
  * Returns:
- *	MOSQ_ERR_SUCCESS - on success
- * 	MOSQ_ERR_NOMEM -   if an out of memory condition occurred.
+ *	MOSQ_ERR_SUCCESS -        on success
+ * 	MOSQ_ERR_NOMEM -          if an out of memory condition occurred.
+ * 	MOSQ_ERR_MALFORMED_UTF8 - if the topic is not valid UTF-8
  *
  * Example:
  *
  * > char **topics;
  * > int topic_count;
  * > int i;
- * > 
+ * >
  * > mosquitto_sub_topic_tokenise("$SYS/broker/uptime", &topics, &topic_count);
  * >
  * > for(i=0; i<token_count; i++)(
@@ -1492,6 +1560,7 @@ function mosquitto_sub_topic_tokens_free(var topics: ppchar; count: cint): cint;
 
 {*
  * Function: mosquitto_topic_matches_sub
+ * Function: mosquitto_topic_matches_sub2
  *
  * Check whether a topic matches a subscription.
  *
@@ -1502,7 +1571,9 @@ function mosquitto_sub_topic_tokens_free(var topics: ppchar; count: cint): cint;
  *
  * Parameters:
  *	sub - subscription string to check topic against.
+ *	sublen - length in bytes of sub string
  *	topic - topic to check.
+ *	topiclen - length in bytes of topic string
  *	result - bool pointer to hold result. Will be set to true if the topic
  *	         matches the subscription.
  *
@@ -1512,6 +1583,7 @@ function mosquitto_sub_topic_tokens_free(var topics: ppchar; count: cint): cint;
  * 	MOSQ_ERR_NOMEM -   if an out of memory condition occurred.
  *}
 function mosquitto_topic_matches_sub(const sub: pchar; const topic: pchar; result: pcbool): cint; cdecl; external libmosq_NAME;
+function mosquitto_topic_matches_sub2(const sub: pchar; sublen: csize_t; const topic: pchar; topiclen: csize_t; result: pcbool): cint; cdecl; external libmosq_NAME;
 
 {*
  * Function: mosquitto_pub_topic_check
@@ -1527,15 +1599,18 @@ function mosquitto_topic_matches_sub(const sub: pchar; const topic: pchar; resul
  *
  * Parameters:
  *   topic - the topic to check
+ *   topiclen - length of the topic in bytes
  *
  * Returns:
- *   MOSQ_ERR_SUCCESS - for a valid topic
- *   MOSQ_ERR_INVAL - if the topic contains a + or a #, or if it is too long.
+ *   MOSQ_ERR_SUCCESS -        for a valid topic
+ *   MOSQ_ERR_INVAL -          if the topic contains a + or a #, or if it is too long.
+ * 	 MOSQ_ERR_MALFORMED_UTF8 - if sub or topic is not valid UTF-8
  *
  * See Also:
  *   <mosquitto_sub_topic_check>
  *}
 function mosquitto_pub_topic_check(const topic: pchar): cint; cdecl; external libmosq_NAME;
+function mosquitto_pub_topic_check2(const topic: pchar; topiclen: csize_t): cint; cdecl; external libmosq_NAME;
 
 {*
  * Function: mosquitto_sub_topic_check
@@ -1553,16 +1628,186 @@ function mosquitto_pub_topic_check(const topic: pchar): cint; cdecl; external li
  *
  * Parameters:
  *   topic - the topic to check
+ *   topiclen - the length in bytes of the topic
  *
  * Returns:
- *   MOSQ_ERR_SUCCESS - for a valid topic
- *   MOSQ_ERR_INVAL - if the topic contains a + or a # that is in an invalid
- *                    position, or if it is too long.
+ *   MOSQ_ERR_SUCCESS -        for a valid topic
+ *   MOSQ_ERR_INVAL -          if the topic contains a + or a # that is in an
+ *                             invalid position, or if it is too long.
+ * 	 MOSQ_ERR_MALFORMED_UTF8 - if topic is not valid UTF-8
  *
  * See Also:
  *   <mosquitto_sub_topic_check>
  *}
 function mosquitto_sub_topic_check(const topic: pchar): cint; cdecl; external libmosq_NAME;
+function mosquitto_sub_topic_check2(const topic: pchar; topiclen: csize_t): cint; cdecl; external libmosq_NAME;
+
+
+type
+    Plibmosquitto_will = ^Tlibmosquitto_will;
+    Tlibmosquitto_will = record
+        topic: pchar;
+        payload: pointer;
+        payloadlen: cint;
+        qos: cint;
+        retain: cbool;
+    end;
+
+
+type
+    Plibmosquitto_auth = ^Tlibmosquitto_auth;
+    Tlibmosquitto_auth = record
+        username: pchar;
+        password: pchar;
+    end;
+
+type
+    Ttls_pw_callback = function(buf: pchar; size: cint; rwflag: cint; userdata: pointer): cint; cdecl;
+
+type
+    Plibmosquitto_tls = ^Tlibmosquitto_tls;
+    Tlibmosquitto_tls = record
+        cafile: pchar;
+        capath: pchar;
+        certfile: pchar;
+        keyfile: pchar;
+        ciphers: pchar;
+        tls_version: pchar;
+        pw_callback: Ttls_pw_callback;
+        cert_reqs: cint;
+    end;
+
+{*
+ * Function: mosquitto_subscribe_simple
+ *
+ * Helper function to make subscribing to a topic and retrieving some messages
+ * very straightforward.
+ *
+ * This connects to a broker, subscribes to a topic, waits for msg_count
+ * messages to be received, then returns after disconnecting cleanly.
+ *
+ * Parameters:
+ *   messages - pointer to a "struct mosquitto_message *". The received
+ *              messages will be returned here. On error, this will be set to
+ *              NULL.
+ *   msg_count - the number of messages to retrieve.
+ *   want_retained - if set to true, stale retained messages will be treated as
+ *                   normal messages with regards to msg_count. If set to
+ *                   false, they will be ignored.
+ *   topic - the subscription topic to use (wildcards are allowed).
+ *   qos - the qos to use for the subscription.
+ *   host - the broker to connect to.
+ *   port - the network port the broker is listening on.
+ *   client_id - the client id to use, or NULL if a random client id should be
+ *               generated.
+ *   keepalive - the MQTT keepalive value.
+ *   clean_session - the MQTT clean session flag.
+ *   username - the username string, or NULL for no username authentication.
+ *   password - the password string, or NULL for an empty password.
+ *   will - a libmosquitto_will struct containing will information, or NULL for
+ *          no will.
+ *   tls - a libmosquitto_tls struct containing TLS related parameters, or NULL
+ *         for no use of TLS.
+ *
+ *
+ * Returns:
+ *   MOSQ_ERR_SUCCESS - on success
+ *   >0 - on error.
+ *}
+function mosquitto_subscribe_simple(messages: PPmosquitto_message;
+                                    msg_count: cint;
+                                    want_retained: cbool;
+                                    const topic: pchar;
+                                    qos: cint;
+                                    const host: pchar;
+                                    port: cint;
+                                    const client_id: pchar;
+                                    keepalive: cint;
+                                    clean_session: cbool;
+                                    const username: pchar;
+                                    const password: pchar;
+                                    const will: Plibmosquitto_will;
+                                    const tls: Plibmosquitto_tls): cint; cdecl; external libmosq_NAME;
+
+{*
+ * Function: mosquitto_subscribe_callback
+ *
+ * Helper function to make subscribing to a topic and processing some messages
+ * very straightforward.
+ *
+ * This connects to a broker, subscribes to a topic, then passes received
+ * messages to a user provided callback. If the callback returns a 1, it then
+ * disconnects cleanly and returns.
+ *
+ * Parameters:
+ *   callback - a callback function in the following form:
+ *              int callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
+ *              Note that this is the same as the normal on_message callback,
+ *              except that it returns an int.
+ *   userdata - user provided pointer that will be passed to the callback.
+ *   topic - the subscription topic to use (wildcards are allowed).
+ *   qos - the qos to use for the subscription.
+ *   host - the broker to connect to.
+ *   port - the network port the broker is listening on.
+ *   client_id - the client id to use, or NULL if a random client id should be
+ *               generated.
+ *   keepalive - the MQTT keepalive value.
+ *   clean_session - the MQTT clean session flag.
+ *   username - the username string, or NULL for no username authentication.
+ *   password - the password string, or NULL for an empty password.
+ *   will - a libmosquitto_will struct containing will information, or NULL for
+ *          no will.
+ *   tls - a libmosquitto_tls struct containing TLS related parameters, or NULL
+ *         for no use of TLS.
+ *
+ *
+ * Returns:
+ *   MOSQ_ERR_SUCCESS - on success
+ *   >0 - on error.
+ *}
+function mosquitto_subscribe_callback(callback: Ton_message_callback;
+                                      userdata: pointer;
+                                      const topic: pchar;
+                                      qos: cint;
+                                      const host: pchar;
+                                      port: cint;
+                                      const client_id: pchar;
+                                      keepalive: cint;
+                                      clean_session: cbool;
+                                      const username: pchar;
+                                      const password: pchar;
+                                      const will: Plibmosquitto_will;
+                                      const tls: Plibmosquitto_tls): cint; cdecl; external libmosq_NAME;
+
+{*
+ * Function: mosquitto_validate_utf8
+ *
+ * Helper function to validate whether a UTF-8 string is valid, according to
+ * the UTF-8 spec and the MQTT additions.
+ *
+ * Parameters:
+ *   str - a string to check
+ *   len - the length of the string in bytes
+ *
+ * Returns:
+ *   MOSQ_ERR_SUCCESS -        on success
+ *   MOSQ_ERR_INVAL -          if str is NULL or len<0 or len>65536
+ *   MOSQ_ERR_MALFORMED_UTF8 - if str is not valid UTF-8
+ *}
+function mosquitto_validate_utf8(const str: pchar; len: cint): cint; cdecl; external libmosq_NAME;
+
+{* Function: mosquitto_userdata
+ *
+ * Retrieve the "userdata" variable for a mosquitto client.
+ *
+ * Parameters:
+ * 	mosq - a valid mosquitto instance.
+ *
+ * Returns:
+ *	A pointer to the userdata member variable.
+ *}
+function mosquitto_userdata(mosq: Pmosquitto): pointer; cdecl; external libmosq_NAME;
+
 
 implementation
 
