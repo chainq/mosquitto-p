@@ -3,7 +3,7 @@
 unit mosquitto;
 
 {*
-Copyright (c) 2010-2018 Roger Light <roger@atchoo.org>
+Copyright (c) 2010-2019 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -48,7 +48,7 @@ const
 const
     LIBMOSQUITTO_MAJOR = 1;
     LIBMOSQUITTO_MINOR = 5;
-    LIBMOSQUITTO_REVISION = 5;
+    LIBMOSQUITTO_REVISION = 8;
 {* LIBMOSQUITTO_VERSION_NUMBER looks like 1002001 for e.g. version 1.2.1. *}
     LIBMOSQUITTO_VERSION_NUMBER = (LIBMOSQUITTO_MAJOR*1000000+LIBMOSQUITTO_MINOR*1000+LIBMOSQUITTO_REVISION);
 
