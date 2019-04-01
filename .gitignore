@@ -1,0 +1,7 @@
+*.ppu
+*.o
+*.dylib
+*.dll
+*.h
+
+test
