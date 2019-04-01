@@ -38,7 +38,7 @@ const
 {$ENDIF}
 {$ELSE}
 {$IFDEF MSWINDOWS}
-{$ERROR Unimplemented platform.}
+    libmosq_NAME = 'mosquitto.dll';
 {$ELSE}
 {$ERROR Unsupported platform.}
 {$ENDIF MSWINDOWS}
