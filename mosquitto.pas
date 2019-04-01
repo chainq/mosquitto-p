@@ -21,6 +21,8 @@ Contributors:
 {*
  * Free Pascal header conversion
  * Copyright (c) 2018-2019 Karoly Balogh <charlie@amigaspirit.hu>
+ *
+ * http://github.com/chainq/mosquitto-p
  *}
 
 interface
