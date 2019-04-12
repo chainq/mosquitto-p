@@ -1379,7 +1379,7 @@ procedure mosquitto_log_callback_set(mosq: Pmosquitto; on_log: Ton_log_callback)
  *	MOSQ_ERR_SUCCESS - on success.
  * 	MOSQ_ERR_INVAL -   if the input parameters were invalid.
  *}
-function mosquitto_reconnect_delay_set(mosq: Pmosquitto; reconnect_delay: cuint; reconnect_delay_max: cuint; reconnect_exponential_backoff: cbool): cint; cdecl; external name libmosq_NAME;
+function mosquitto_reconnect_delay_set(mosq: Pmosquitto; reconnect_delay: cuint; reconnect_delay_max: cuint; reconnect_exponential_backoff: cbool): cint; cdecl; external libmosq_NAME;
 
 {*
  * Function: mosquitto_max_inflight_messages_set
