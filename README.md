@@ -1,4 +1,4 @@
-# libmosquitto-p
+# mosquitto-p
 
 Free Pascal conversions of the libmosquitto header file `mosquitto.h`,
 as part of the Eclipse Mosquitto project, and some Pascal examples
