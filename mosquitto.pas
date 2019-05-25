@@ -30,6 +30,14 @@ interface
 uses
     ctypes;
 
+{ This is a kludge, because apparently GCC is confused about
+  how C booleans should work, and optimizes code away inside
+  libmosquitto on some platforms, which breaks the 'non zero
+  means true in C' assumption of FPC. (CB) }
+type
+    cbool = boolean; { longbool in ctypes }
+    pcbool = ^cbool;
+
 const
 {$IFDEF HASUNIX}
 {$IFDEF DARWIN}
