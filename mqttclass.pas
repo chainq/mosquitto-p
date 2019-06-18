@@ -169,7 +169,7 @@ end;
 
 function TMQTTConnection.Connect: cint;
 begin
-  writeln('[MQTT] Connecting to [',FConfig.hostname,':',FConfig.port,'] - SSL:',FConfig.SSL);
+  writeln('[MQTT] [',FName,'] Connecting to [',FConfig.hostname,':',FConfig.port,'] - SSL:',FConfig.SSL);
   result:=mosquitto_connect_async(Fmosquitto, PChar(FConfig.hostname), FConfig.port, FConfig.keepalives);
   if result = MOSQ_ERR_SUCCESS then
     State:=mqttConnecting;
