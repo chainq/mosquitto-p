@@ -223,8 +223,11 @@ end;
 procedure TMQTTConnection.SetMQTTState(state: TMQTTConnectionState);
 begin
   EnterCriticalSection(FMQTTStateLock);
-  writeln('[MQTT] [',FName,'] State change: ',FMQTTState,' -> ',state);
-  FMQTTState:=state;
+  if FMQTTState <> state then
+    begin
+      writeln('[MQTT] [',FName,'] State change: ',FMQTTState,' -> ',state);
+      FMQTTState:=state;
+    end;
   LeaveCriticalSection(FMQTTStateLock);
 end;
 
