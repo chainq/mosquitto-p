@@ -53,6 +53,8 @@ type
     username: ansistring;
     password: ansistring;
     keepalives: longint;
+    reconnect_delay: longint;
+    reconnect_backoff: boolean;
   end;
 
 type
@@ -63,6 +65,7 @@ type
       FName: string;
       FMosquitto: Pmosquitto;
       FConfig: TMQTTConfig;
+
       FOnMessage: TMQTTOnMessageEvent;
       FOnPublish: TMQTTOnPublishEvent;
       FOnSubscribe: TMQTTOnSubscribeEvent;
@@ -70,9 +73,19 @@ type
       FOnConnect: TMQTTOnConnectEvent;
       FOnDisconnect: TMQTTOnDisconnectEvent;
       FOnLog: TMQTTOnLogEvent;
+
       FAutoReconnect: boolean;
+      FReconnectTimer: TDateTime;
+      FReconnectPeriod: longint;
+      FReconnectDelay: longint;
+      FReconnectBackoff: boolean;
+
       FMQTTState: TMQTTConnectionState;
       FMQTTStateLock: TRTLCriticalSection;
+
+      procedure SetupReconnectDelay;
+      function ReconnectDelayExpired: boolean;
+
       function GetMQTTState: TMQTTConnectionState;
       procedure SetMQTTState(state: TMQTTConnectionState);
       procedure Execute; override;
@@ -103,7 +116,11 @@ implementation
 
 
 uses
-  sysutils;
+  sysutils, dateutils;
+
+const
+  DEFAULT_RECONNECT_PERIOD_MS = 100;
+  DEFAULT_RECONNECT_DELAY_MS = 60 * 1000;
 
 var
   logger: mqtt_logfunc;
@@ -141,6 +158,15 @@ begin
   FAutoReconnect:=true;
   InitCriticalSection(FMQTTStateLock);
   State:=mqttNone;
+
+  FReconnectTimer:=Now;
+  FReconnectPeriod:=DEFAULT_RECONNECT_PERIOD_MS;
+  FReconnectDelay:=DEFAULT_RECONNECT_DELAY_MS;
+  if FConfig.reconnect_delay <> 0 then
+    FReconnectDelay:=FConfig.reconnect_delay * 1000
+  else
+    FAutoReconnect:=false;
+  FReconnectBackoff:=FConfig.reconnect_backoff;
 
   mosquitto_threaded_set(Fmosquitto, true);
 
@@ -185,17 +211,28 @@ end;
 
 function TMQTTConnection.Connect: cint;
 begin
-  logger('[MQTT] ['+FName+'] Connecting to ['+FConfig.hostname+':'+IntToStr(FConfig.port)+'] - SSL:'+BoolToStr(FConfig.SSL));
+  logger('[MQTT] ['+FName+'] Connecting to ['+FConfig.hostname+':'+IntToStr(FConfig.port)+'] - SSL:'+BoolToStr(FConfig.SSL,true));
   result:=mosquitto_connect_async(Fmosquitto, PChar(FConfig.hostname), FConfig.port, FConfig.keepalives);
   if result = MOSQ_ERR_SUCCESS then
-    State:=mqttConnecting;
+    State:=mqttConnecting
+  else
+    begin
+      State:=mqttDisconnected;
+      logger('[MQTT] ['+FName+'] Connection failed with: '+mosquitto_strerror(result));
+    end;
 end;
 
 function TMQTTConnection.Reconnect: cint;
 begin
+  logger('[MQTT] ['+FName+'] Reconnecting to ['+FConfig.hostname+':'+IntToStr(FConfig.port)+'] - SSL:'+BoolToStr(FConfig.SSL,true));
   result:=mosquitto_reconnect_async(Fmosquitto);
   if result = MOSQ_ERR_SUCCESS then
-    State:=mqttConnecting;
+    State:=mqttConnecting
+  else
+    begin
+      State:=mqttDisconnected;
+      logger('[MQTT] ['+FName+'] Reconnection failed with: '+mosquitto_strerror(result));
+    end;
 end;
 
 function TMQTTConnection.Subscribe(var mid: cint; const sub: ansistring; qos: cint): cint;
@@ -250,38 +287,76 @@ begin
   LeaveCriticalSection(FMQTTStateLock);
 end;
 
+procedure TMQTTConnection.SetupReconnectDelay;
+begin
+  if FReconnectBackoff then
+    begin
+      { This is kind of a kludge, but I've got no better idea for a simple
+        solution - if there was no reconnection attempt for the double of
+        the reconnect delay, we reset the backoff on the next attempt. (CB) }
+      if MillisecondsBetween(FReconnectTimer, Now) > (FReconnectDelay * 2) then
+        FReconnectPeriod:=DEFAULT_RECONNECT_PERIOD_MS
+      else
+        FReconnectPeriod:=FReconnectPeriod * 2;
+    end
+  else
+    FReconnectPeriod:=FReconnectDelay;
+
+  if FReconnectPeriod > FReconnectDelay then
+    FReconnectPeriod:=FReconnectDelay;
+
+  FReconnectTimer:=Now;
+  logger('[MQTT] ['+FName+'] Next reconnection attempt in '+FloatToStr(FReconnectPeriod / 1000)+' seconds.');
+end;
+
+function TMQTTConnection.ReconnectDelayExpired: boolean;
+begin
+  result:=MillisecondsBetween(FReconnectTimer, Now) > FReconnectPeriod;
+end;
+
+
 procedure TMQTTConnection.Execute;
+var
+  backoff_period: LongInt;
 begin
   try
-    logger('[MQTTTHREAD] Entering thread...');
+    logger('[MQTT] ['+FName+'] Entering subthread...');
     { OK, so this piece has to manage the entire reconnecting logic, because
       libmosquitto only has the reconnection logic and state machine, if the
       code uses the totally blocking mosquitto_loop_forever(), which has a
       few quirks to say the least, plus due to its blocking nature, has
       a few interoperability issues with Pascal threading... (CB) }
-    while not (Terminated and (State = mqttDisconnected)) do
+    while not (Terminated and (State in [mqttDisconnected, mqttReconnecting, mqttNone ] )) do
       begin
         case State of
           mqttNone:
             Sleep(100);
           mqttDisconnected:
             if AutoReconnect then
-              State:=mqttReconnecting
+              begin
+                SetupReconnectDelay;
+                State:=mqttReconnecting;
+              end
             else
-              State:=mqttNone;
+              begin
+                logger('[MQTT] ['+FName+'] Automatic reconnection disabled, going standby.');
+                State:=mqttNone;
+              end;
           mqttReconnecting:
             begin
-              Sleep(100); //FIXME: proper backoff reconnect delay here!
-              Reconnect;
+              if ReconnectDelayExpired then
+                Reconnect
+              else
+                Sleep(100);
             end;
           mqttConnected, mqttConnecting:
             mosquitto_loop(Fmosquitto, 100, 1);
         end;
       end;
   except
-    logger('[MQTTTHREAD] Exception!');
+    logger('[MQTT] ['+FName+'] Exception!');
   end;
-  logger('[MQTTTHREAD] Exiting thread.');
+  logger('[MQTT] ['+FName+'] Exiting subthread.');
 end;
 
 
