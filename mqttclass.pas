@@ -316,8 +316,6 @@ end;
 
 
 procedure TMQTTConnection.Execute;
-var
-  backoff_period: LongInt;
 begin
   try
     logger('[MQTT] ['+FName+'] Entering subthread...');
@@ -353,6 +351,7 @@ begin
             mosquitto_loop(Fmosquitto, 100, 1);
         end;
       end;
+    State:=mqttNone;
   except
     logger('[MQTT] ['+FName+'] Exception!');
   end;
