@@ -152,7 +152,7 @@ begin
   FName:=name;
   FMosquitto:=mosquitto_new(nil, true, self);
   if FMosquitto=nil then
-    raise Exception.Create('Mosquitto Error');
+    raise Exception.Create('mosquitto instance creation failure');
 
   FConfig:=config;
   FAutoReconnect:=true;
@@ -186,8 +186,8 @@ begin
           rc:=mosquitto_tls_set(Fmosquitto, PChar(FConfig.ssl_cacertfile), nil, nil, nil, nil);
           if rc <> MOSQ_ERR_SUCCESS then
             begin
-              logger('[MQTT] TLS setup error: '+mosquitto_strerror(rc));
-              raise Exception.Create('TLS Error');
+              logger('[MQTT] ERROR TLS Setup: '+mosquitto_strerror(rc));
+              raise Exception.Create('TLS Setup: '+mosquitto_strerror(rc));
             end;
         end
       else
@@ -204,8 +204,11 @@ destructor TMQTTConnection.Destroy;
 begin
   mosquitto_disconnect(FMosquitto);
 
-  Terminate; { ... the thread }
-  WaitFor;
+  if not Suspended then
+    begin
+      Terminate; { ... the thread }
+      WaitFor;
+    end;
 
   mosquitto_destroy(FMosquitto);
   FMosquitto:=nil;
