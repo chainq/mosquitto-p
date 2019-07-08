@@ -180,12 +180,18 @@ begin
 
   if FConfig.ssl then
     begin
-      rc:=mosquitto_tls_set(Fmosquitto, PChar(ExtractFileName(FConfig.ssl_cacertfile)), PChar(ExtractFilePath(FConfig.ssl_cacertfile)), nil, nil, nil);
-      if rc <> MOSQ_ERR_SUCCESS then
+      if (FConfig.ssl_cacertfile = '') then
         begin
-          logger('[MQTT] TLS setup error: '+mosquitto_strerror(rc));
-          raise Exception.Create('TLS Error');
-        end;
+          logger('[MQTT] TLS CERT: '+FConfig.ssl_cacertfile);
+          rc:=mosquitto_tls_set(Fmosquitto, PChar(FConfig.ssl_cacertfile), nil, nil, nil, nil);
+          if rc <> MOSQ_ERR_SUCCESS then
+            begin
+              logger('[MQTT] TLS setup error: '+mosquitto_strerror(rc));
+              raise Exception.Create('TLS Error');
+            end;
+        end
+      else
+        logger('[MQTT] WARNING: SSL enabled, but no CERT file specified. Skipping TLS setup...');
     end;
 
   if FConfig.username <> '' then
