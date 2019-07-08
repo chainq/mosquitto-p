@@ -180,7 +180,7 @@ begin
 
   if FConfig.ssl then
     begin
-      if (FConfig.ssl_cacertfile = '') then
+      if (FConfig.ssl_cacertfile <> '') then
         begin
           logger('[MQTT] TLS CERT: '+FConfig.ssl_cacertfile);
           rc:=mosquitto_tls_set(Fmosquitto, PChar(FConfig.ssl_cacertfile), nil, nil, nil, nil);
