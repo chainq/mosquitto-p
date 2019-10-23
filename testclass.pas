@@ -51,7 +51,8 @@ begin
       keepalives:=60;
     end;
 
-  mqtt:=TMyMQTTConnection.Create('TEST',config);
+  { use MOSQ_LOG_NODEBUG to disable debug logging }
+  mqtt:=TMyMQTTConnection.Create('TEST',config,MOSQ_LOG_ALL);
   try
     { This could also go to a custom constructor of the class,
       for more complicated setups. }

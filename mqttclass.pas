@@ -28,7 +28,8 @@ uses
 type
   mqtt_logfunc = procedure(const msg: ansistring);
 
-function mqtt_init: boolean;
+function mqtt_init: boolean; overload;
+function mqtt_init(const verbose: boolean): boolean; overload;
 function mqtt_loglevel_to_str(const loglevel: cint): ansistring;
 procedure mqtt_setlogfunc(logfunc: mqtt_logfunc);
 
@@ -40,6 +41,9 @@ type
   TMQTTOnConnectEvent = procedure(const rc: cint) of object;
   TMQTTOnDisconnectEvent = procedure(const rc: cint) of object;
   TMQTTOnLogEvent = procedure(const level: cint; const str: ansistring) of object;
+
+const
+  MOSQ_LOG_NODEBUG = MOSQ_LOG_ALL - MOSQ_LOG_DEBUG;
 
 type
   TMQTTConnectionState = ( mqttNone, mqttConnecting, mqttConnected, mqttReconnecting, mqttDisconnected );
@@ -73,6 +77,8 @@ type
       FOnConnect: TMQTTOnConnectEvent;
       FOnDisconnect: TMQTTOnDisconnectEvent;
       FOnLog: TMQTTOnLogEvent;
+      FMQTTLogLevel: cint; { allowed log levels of the mqttclass }
+      FMOSQLogLevel: cint; { allowed log levels of the underlying mosquitto lib }
 
       FAutoReconnect: boolean;
       FReconnectTimer: TDateTime;
@@ -91,6 +97,7 @@ type
       procedure Execute; override;
     public
       constructor Create(const name: string; const config: TMQTTConfig);
+      constructor Create(const name: string; const config: TMQTTConfig; const loglevel: cint);
       destructor Destroy; override;
       function Connect: cint;
       function Reconnect: cint;
@@ -101,6 +108,8 @@ type
       function Publish(var mid: cint; const topic: ansistring; const payload: ansistring; qos: cint; retain: cbool): cint;
       function Publish(const topic: ansistring; const payload: ansistring; qos: cint; retain: cbool): cint;
 
+      procedure Log(const level: cint; const message: ansistring);
+
       property State: TMQTTConnectionState read GetMQTTState write SetMQTTState;
       property AutoReconnect: boolean read FAutoReconnect write FAutoReconnect;
       property OnMessage: TMQTTOnMessageEvent read FOnMessage write FOnMessage;
@@ -110,6 +119,9 @@ type
       property OnConnect: TMQTTOnConnectEvent read FOnConnect write FOnConnect;
       property OnDisconnect: TMQTTOnDisconnectEvent read FOnDisconnect write FOnDisconnect;
       property OnLog: TMQTTOnLogEvent read FOnLog write FOnLog;
+
+      property MQTTLogLevel: cint read FMQTTLogLevel write FMQTTLogLevel;
+      property MOSQLogLevel: cint read FMOSQLogLevel write FMOSQLogLevel;
   end;
 
 implementation
@@ -144,6 +156,11 @@ begin
 end;
 
 constructor TMQTTConnection.Create(const name: String; const config: TMQTTConfig);
+begin
+  Create(name, config, MOSQ_LOG_ALL);
+end;
+
+constructor TMQTTConnection.Create(const name: String; const config: TMQTTConfig; const loglevel: cint);
 var
   rc: cint;
 begin
@@ -158,6 +175,9 @@ begin
   FAutoReconnect:=true;
   InitCriticalSection(FMQTTStateLock);
   State:=mqttNone;
+
+  MQTTLogLevel:=loglevel;
+  MOSQLogLevel:=loglevel;
 
   FReconnectTimer:=Now;
   FReconnectPeriod:=DEFAULT_RECONNECT_PERIOD_MS;
@@ -182,16 +202,16 @@ begin
     begin
       if (FConfig.ssl_cacertfile <> '') then
         begin
-          logger('[MQTT] TLS CERT: '+FConfig.ssl_cacertfile);
+          Log(MOSQ_LOG_INFO,'TLS CERT: '+FConfig.ssl_cacertfile);
           rc:=mosquitto_tls_set(Fmosquitto, PChar(FConfig.ssl_cacertfile), nil, nil, nil, nil);
           if rc <> MOSQ_ERR_SUCCESS then
             begin
-              logger('[MQTT] ERROR TLS Setup: '+mosquitto_strerror(rc));
+              Log(MOSQ_LOG_ERR,'TLS Setup: '+mosquitto_strerror(rc));
               raise Exception.Create('TLS Setup: '+mosquitto_strerror(rc));
             end;
         end
       else
-        logger('[MQTT] WARNING: SSL enabled, but no CERT file specified. Skipping TLS setup...');
+        Log(MOSQ_LOG_WARNING,'SSL enabled, but no CERT file specified. Skipping TLS setup...');
     end;
 
   if FConfig.username <> '' then
@@ -220,27 +240,27 @@ end;
 
 function TMQTTConnection.Connect: cint;
 begin
-  logger('[MQTT] ['+FName+'] Connecting to ['+FConfig.hostname+':'+IntToStr(FConfig.port)+'] - SSL:'+BoolToStr(FConfig.SSL,true));
+  Log(MOSQ_LOG_INFO,'Connecting to ['+FConfig.hostname+':'+IntToStr(FConfig.port)+'] - SSL:'+BoolToStr(FConfig.SSL,true));
   result:=mosquitto_connect_async(Fmosquitto, PChar(FConfig.hostname), FConfig.port, FConfig.keepalives);
   if result = MOSQ_ERR_SUCCESS then
     State:=mqttConnecting
   else
     begin
       State:=mqttDisconnected;
-      logger('[MQTT] ['+FName+'] Connection failed with: '+mosquitto_strerror(result));
+      Log(MOSQ_LOG_ERR,'Connection failed with: '+mosquitto_strerror(result));
     end;
 end;
 
 function TMQTTConnection.Reconnect: cint;
 begin
-  logger('[MQTT] ['+FName+'] Reconnecting to ['+FConfig.hostname+':'+IntToStr(FConfig.port)+'] - SSL:'+BoolToStr(FConfig.SSL,true));
+  Log(MOSQ_LOG_INFO,'Reconnecting to ['+FConfig.hostname+':'+IntToStr(FConfig.port)+'] - SSL:'+BoolToStr(FConfig.SSL,true));
   result:=mosquitto_reconnect_async(Fmosquitto);
   if result = MOSQ_ERR_SUCCESS then
     State:=mqttConnecting
   else
     begin
       State:=mqttDisconnected;
-      logger('[MQTT] ['+FName+'] Reconnection failed with: '+mosquitto_strerror(result));
+      Log(MOSQ_LOG_ERR,'Reconnection failed with: '+mosquitto_strerror(result));
     end;
 end;
 
@@ -275,6 +295,19 @@ begin
   result:=mosquitto_publish(Fmosquitto, nil, PChar(topic), length(payload), PChar(payload), qos, retain);
 end;
 
+
+procedure TMQTTConnection.Log(const level: cint; const message: ansistring);
+var
+  tmp: ansistring;
+begin
+  if (MQTTLogLevel and level) > 0 then
+    begin
+      writestr(tmp,'[MQTT] [',FName,'] ',mqtt_loglevel_to_str(level),' ',message);
+      logger(tmp);
+    end;
+end;
+
+
 function TMQTTConnection.GetMQTTState: TMQTTConnectionState;
 begin
   EnterCriticalSection(FMQTTStateLock);
@@ -289,8 +322,8 @@ begin
   EnterCriticalSection(FMQTTStateLock);
   if FMQTTState <> state then
     begin
-      writestr(tmp,'[MQTT] [',FName,'] State change: ',FMQTTState,' -> ',state);
-      logger(tmp);
+      writestr(tmp,'State change: ',FMQTTState,' -> ',state);
+      Log(MOSQ_LOG_DEBUG,tmp);
       FMQTTState:=state;
     end;
   LeaveCriticalSection(FMQTTStateLock);
@@ -315,7 +348,7 @@ begin
     FReconnectPeriod:=FReconnectDelay;
 
   FReconnectTimer:=Now;
-  logger('[MQTT] ['+FName+'] Next reconnection attempt in '+FloatToStr(FReconnectPeriod / 1000)+' seconds.');
+  Log(MOSQ_LOG_INFO,'Next reconnection attempt in '+FloatToStr(FReconnectPeriod / 1000)+' seconds.');
 end;
 
 function TMQTTConnection.ReconnectDelayExpired: boolean;
@@ -327,7 +360,7 @@ end;
 procedure TMQTTConnection.Execute;
 begin
   try
-    logger('[MQTT] ['+FName+'] Entering subthread...');
+    Log(MOSQ_LOG_DEBUG,'Entering subthread...');
     { OK, so this piece has to manage the entire reconnecting logic, because
       libmosquitto only has the reconnection logic and state machine, if the
       code uses the totally blocking mosquitto_loop_forever(), which has a
@@ -346,7 +379,7 @@ begin
               end
             else
               begin
-                logger('[MQTT] ['+FName+'] Automatic reconnection disabled, going standby.');
+                Log(MOSQ_LOG_INFO,'Automatic reconnection disabled, going standby.');
                 State:=mqttNone;
               end;
           mqttReconnecting:
@@ -362,9 +395,10 @@ begin
       end;
     State:=mqttNone;
   except
-    logger('[MQTT] ['+FName+'] Exception!');
+    { FIX ME: this really needs something better }
+    Log(MOSQ_LOG_ERR,'Exception in subthread, leaving...');
   end;
-  logger('[MQTT] ['+FName+'] Exiting subthread.');
+  Log(MOSQ_LOG_DEBUG,'Exiting subthread.');
 end;
 
 
@@ -394,13 +428,11 @@ end;
 procedure mqtt_on_publish(mosq: Pmosquitto; obj: pointer; mid: cint); cdecl;
 var
   Fmosquitto: TMQTTConnection absolute obj;
-  tmp: ansistring;
 begin
   if assigned(Fmosquitto) then
     with FMosquitto do
       begin
-        writestr(tmp,'[MQTT] [',FName,'] Publish ID: ',mid);
-        logger(tmp);
+        Log(MOSQ_LOG_DEBUG,'Publish ID: '+IntToStr(mid));
         if assigned(OnPublish) then
           OnPublish(mid);
       end;
@@ -429,7 +461,7 @@ begin
   if assigned(FMosquitto) then
     with FMosquitto do
       begin
-        logger('[MQTT] ['+FName+'] Broker connection: '+mosquitto_strerror(rc));
+        Log(MOSQ_LOG_INFO,'Broker connection: '+mosquitto_strerror(rc));
         State:=mqttConnected;
         if assigned(OnConnect) then
           OnConnect(rc);
@@ -445,7 +477,7 @@ begin
   if assigned(FMosquitto) then
     with FMosquitto do
       begin
-        logger('[MQTT] ['+FName+'] Broker disconnected: '+disconnect_reason[rc = 0]);
+        Log(MOSQ_LOG_INFO,'Broker disconnected: '+disconnect_reason[rc = 0]);
         State:=mqttDisconnected;
         if assigned(OnDisconnect) then
           OnDisconnect(rc);
@@ -455,20 +487,26 @@ end;
 procedure mqtt_on_log(mosq: Pmosquitto; obj: pointer; level: cint; const str: pchar); cdecl;
 var
   Fmosquitto: TMQTTConnection absolute obj;
-  name: String;
   tmp: ansistring;
 begin
-  name:='';
+  tmp:='';
+
   if assigned(Fmosquitto) then
-    name:=FMosquitto.FName;
-  if name='' then
-    name:='UNNAMED';
-
-  writestr(tmp,'[MOSQUITTO] [',name,'] ',mqtt_loglevel_to_str(level),' ',str);
-  logger(tmp);
-
-  if assigned(Fmosquitto) and assigned(FMosquitto.OnLog) then
-    Fmosquitto.OnLog(level, str);
+    with Fmosquitto do
+      begin
+        if (MOSQLogLevel and level) > 0 then
+          begin
+            writestr(tmp,'[MOSQUITTO] [',FName,'] ',mqtt_loglevel_to_str(level),' ',str);
+            logger(tmp)
+          end;
+        if assigned(OnLog) then
+          OnLog(level, str);
+      end
+  else
+    begin
+      writestr(tmp,'[MOSQUITTO] [UNNAMED] ',mqtt_loglevel_to_str(level),' ',str);
+      logger(tmp);
+    end;
 end;
 
 var
@@ -476,20 +514,29 @@ var
 
 
 function mqtt_init: boolean;
+begin
+  result:=mqtt_init(true);
+end;
+
+function mqtt_init(const verbose: boolean): boolean;
 var
   major, minor, revision: cint;
 begin
   result:=libinited;
   if not libinited then
     begin
-      logger('[MOSQ] mosquitto init failed.');
+      if verbose then
+        logger('[MOSQUITTO] mosquitto init failed.');
       exit;
     end;
 
-  mosquitto_lib_version(@major,@minor,@revision);
+  if verbose then
+    begin
+      mosquitto_lib_version(@major,@minor,@revision);
 
-  logger('[MQTT] Compiled against mosquitto header version '+IntToStr(LIBMOSQUITTO_MAJOR)+'.'+IntToStr(LIBMOSQUITTO_MINOR)+'.'+IntToStr(LIBMOSQUITTO_REVISION));
-  logger('[MQTT] Running against libmosquitto version '+IntToStr(major)+'.'+IntToStr(minor)+'.'+IntToStr(revision));
+      logger('[MQTT] Compiled against mosquitto header version '+IntToStr(LIBMOSQUITTO_MAJOR)+'.'+IntToStr(LIBMOSQUITTO_MINOR)+'.'+IntToStr(LIBMOSQUITTO_REVISION));
+      logger('[MQTT] Running against libmosquitto version '+IntToStr(major)+'.'+IntToStr(minor)+'.'+IntToStr(revision));
+    end;
 end;
 
 initialization
