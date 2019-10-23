@@ -12,9 +12,9 @@ https://github.com/eclipse/mosquitto
 
 ### Source Files
 
-* `mosquitto.pas` - conversion of the C `mosquitto.h` header to Pascal
+* `mosquitto.pas` - conversion of the C `mosquitto.h` header to Pascal,
                     provides the same API as the C version
-* `mqttclass.pas` - Object Pascal wrapper class to ease the integration 
+* `mqttclass.pas` - Object Pascal wrapper class to ease the integration
                     of libmosquitto into Object Oriented applications
 * `test.pas`      - Test code for the Pascal header unit with C-like API
 * `testclass.pas` - Test code for the Object Pascal wrapper class
