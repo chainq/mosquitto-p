@@ -59,6 +59,7 @@ type
     keepalives: longint;
     reconnect_delay: longint;
     reconnect_backoff: boolean;
+    client_id:ansistring;
   end;
 
 type
@@ -66,6 +67,7 @@ type
     on Windows comes w/o threading enabled by default (CB) }
   TMQTTConnection = class(TThread)
     protected
+      FClientID:ansistring;
       FName: string;
       FMosquitto: Pmosquitto;
       FConfig: TMQTTConfig;
@@ -167,7 +169,11 @@ begin
   inherited Create(true);
 
   FName:=name;
-  FMosquitto:=mosquitto_new(nil, true, self);
+  FClientID:=config.client_id;
+
+  if FClientID='' then
+  FMosquitto:=mosquitto_new(nil, true, self) else
+  FMosquitto:=mosquitto_new(Pchar(FClientID), true, self);
   if FMosquitto=nil then
     raise Exception.Create('mosquitto instance creation failure');
 
