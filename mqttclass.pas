@@ -59,6 +59,7 @@ type
     keepalives: longint;
     reconnect_delay: longint;
     reconnect_backoff: boolean;
+    client_id: ansistring;
   end;
 
 type
@@ -167,11 +168,12 @@ begin
   inherited Create(true);
 
   FName:=name;
-  FMosquitto:=mosquitto_new(nil, true, self);
+  FConfig:=config;
+
+  FMosquitto:=mosquitto_new(PChar(@FConfig.client_id[1]), true, self);
   if FMosquitto=nil then
     raise Exception.Create('mosquitto instance creation failure');
 
-  FConfig:=config;
   FAutoReconnect:=true;
   InitCriticalSection(FMQTTStateLock);
   State:=mqttNone;
